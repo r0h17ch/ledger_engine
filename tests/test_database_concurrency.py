@@ -25,11 +25,11 @@ def test_concurrent_withdrawals():
     account_id = create_account()
 
     # Deposit ₹1,000 = 100000 paise.
-    deposit(account_id, 100000)
+    deposit(account_id, 100000, str(uuid4()))
 
     def attempt_withdrawal():
         try:
-            withdraw(account_id, 80000)
+            withdraw(account_id, 80000, str(uuid4()))
             return "success"
         except ValueError:
             return "failed"

@@ -25,7 +25,7 @@ def create_test_account(name):
 def test_deposit():
     account_id = create_test_account("Alice")
 
-    deposit(account_id, 100000)
+    deposit(account_id, 100000, str(uuid4()))
 
     with get_connection() as conn:
         with conn.cursor() as cur:
@@ -91,7 +91,7 @@ def test_deposit_rolls_back_on_ledger_failure():
 
     try:
         with pytest.raises(psycopg.errors.RaiseException):
-            deposit(account_id, 50000)
+            deposit(account_id, 50000, str(uuid4()))
 
     finally:
         with get_connection() as conn:
@@ -135,8 +135,8 @@ def test_deposit_rolls_back_on_ledger_failure():
 def test_withdraw():
     account_id = create_test_account("Withdrawal Test")
 
-    deposit(account_id, 100000)
-    withdraw(account_id, 30000)
+    deposit(account_id, 100000, str(uuid4()))
+    withdraw(account_id, 30000, str(uuid4()))
 
     with get_connection() as conn:
         with conn.cursor() as cur:
@@ -153,8 +153,8 @@ def test_transfer():
     alice = create_test_account("Transfer Alice")
     bob = create_test_account("Transfer Bob")
 
-    deposit(alice, 100000)
-    transfer(alice, bob, 40000)
+    deposit(alice, 100000, str(uuid4()))
+    transfer(alice, bob, 40000, str(uuid4()))
 
     with get_connection() as conn:
         with conn.cursor() as cur:
@@ -177,10 +177,10 @@ def test_transfer():
 def test_withdrawal_cannot_overdraw():
     account_id = create_test_account("Overdraft Test")
 
-    deposit(account_id, 10000)
+    deposit(account_id, 10000, str(uuid4()))
 
     with pytest.raises(ValueError):
-        withdraw(account_id, 20000)
+        withdraw(account_id, 20000, str(uuid4()))
 
     with get_connection() as conn:
         with conn.cursor() as cur:
@@ -196,7 +196,7 @@ def test_withdrawal_cannot_overdraw():
 def test_transfer_to_same_account_rejected():
     account_id = create_test_account("Same Account Test")
 
-    deposit(account_id, 10000)
+    deposit(account_id, 10000, str(uuid4()))
 
     with pytest.raises(ValueError):
-        transfer(account_id, account_id, 1000)
+        transfer(account_id, account_id, 1000, str(uuid4()))

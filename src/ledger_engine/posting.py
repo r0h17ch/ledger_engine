@@ -1,4 +1,6 @@
 import psycopg
+import hashlib
+import json
 from uuid import uuid4
 
 from ledger_engine.database import get_connection
@@ -7,7 +9,7 @@ from ledger_engine.database import get_connection
 SYSTEM_ACCOUNT_ID = "00000000-0000-0000-0000-000000000001"
 
 
-def post_transaction(entries, description):
+def post_transaction(entries, description, idempotency_key):
     """
     Post a balanced transaction atomically.
 
@@ -57,11 +59,87 @@ def post_transaction(entries, description):
     if total_debit != total_credit:
         raise ValueError("Transaction is not balanced")
 
+    if (
+        not isinstance(idempotency_key, str)
+        or not idempotency_key.strip()
+        or len(idempotency_key) > 255
+    ):
+        raise ValueError("A valid idempotency key is required")
+
+    # Build a deterministic representation of the request
+    cononical_entries = sorted(
+        [
+            {
+                "account_id" : entry["account_id"],
+                "debit" : entry["debit"],
+                "credit" : entry["credit"]
+            }
+            for entry in entries
+        ],
+        key = lambda entry : entry["account_id"]
+    )
+
+    request_payload = {
+        "description" : description,
+        "currency" : "INR",
+        "entries" : cononical_entries
+    }
+
+    request_hash = hashlib.sha256(
+        json.dumps(
+            request_payload,
+            sort_keys=True,
+            separators=("," , ":")
+        ).encode("utf-8")
+    ).hexdigest()
+
     transaction_id = str(uuid4())
 
     try:
         with get_connection() as conn:
             with conn.cursor() as cur:
+
+                cur.execute(
+                    """
+                    INSERT INTO transactions
+                        (id, description, currency, idempotency_key, request_hash)
+                    VALUES (%s, %s, 'INR', %s, %s)
+                    ON CONFLICT (idempotency_key) DO NOTHING
+                    RETURNING id
+                    """,
+                    (
+                        transaction_id,
+                        description,
+                        idempotency_key,
+                        request_hash
+                    )
+                )
+
+                inserted = cur.fetchone()
+
+                if inserted is None:
+                    cur.execute(
+                        """
+                        SELECT id, request_hash
+                        FROM transactions
+                        WHERE idempotency_key = %s
+                        """,
+                        (idempotency_key,)
+                    )
+
+                    existing = cur.fetchone()
+
+                    if existing is None:
+                        raise RuntimeError("Idempotency reservation could not be retrieved")
+
+                    existing_id, existing_hash = existing
+
+                    if existing_hash != request_hash:
+                        raise ValueError(
+                            "Idempotency key was already used for a different request"
+                        )
+
+                    return str(existing_id)
 
                 # Lock accounts in deterministic order.
                 sorted_ids = sorted(account_ids)
@@ -82,15 +160,6 @@ def post_transaction(entries, description):
                 if len(locked_accounts) != len(set(account_ids)):
                     raise ValueError("One or more accounts do not exist")
 
-                # Create transaction.
-                cur.execute(
-                    """
-                    INSERT INTO transactions
-                        (id, description, currency)
-                    VALUES (%s, %s, 'INR')
-                    """,
-                    (transaction_id, description)
-                )
 
                 # Update account balance projections.
                 for entry in entries:
@@ -135,7 +204,7 @@ def post_transaction(entries, description):
     return transaction_id
 
 
-def deposit(account_id: str, amount: int):
+def deposit(account_id: str, amount: int, idempotency_key: str):
     if not isinstance(amount, int) or isinstance(amount, bool):
         raise ValueError("Amount must be an integer")
 
@@ -155,11 +224,12 @@ def deposit(account_id: str, amount: int):
                 "credit": amount
             }
         ],
-        "Account deposit"
+        "Account deposit",
+        idempotency_key
     )
 
 
-def withdraw(account_id: str, amount: int):
+def withdraw(account_id: str, amount: int, idempotency_key: str):
     if not isinstance(amount, int) or isinstance(amount, bool):
         raise ValueError("Amount must be an integer")
 
@@ -179,11 +249,17 @@ def withdraw(account_id: str, amount: int):
                 "credit": amount
             }
         ],
-        "Account withdrawal"
+        "Account withdrawal",
+        idempotency_key
     )
 
 
-def transfer(source_account_id: str, destination_account_id: str, amount: int):
+def transfer(
+    source_account_id: str, 
+    destination_account_id: str, 
+    amount: int,
+    idempotency_key: str
+):
     if not isinstance(amount, int) or isinstance(amount, bool):
         raise ValueError("Amount must be an integer")
 
@@ -206,5 +282,6 @@ def transfer(source_account_id: str, destination_account_id: str, amount: int):
                 "credit": amount
             }
         ],
-        "Account transfer"
+        "Account transfer",
+        idempotency_key
     )
