@@ -198,6 +198,15 @@ def post_transaction(entries, description, idempotency_key):
                     ]
                 )
 
+                cur.execute(
+                    """
+                    UPDATE transactions
+                    SET posted_at = NOW()
+                    WHERE id = %s
+                    """,
+                    (transaction_id,)
+                )
+
     except psycopg.errors.CheckViolation as exc:
         raise ValueError("Insufficient funds or database constraint violated") from exc
 
