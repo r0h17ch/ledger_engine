@@ -42,9 +42,12 @@ def test_posted_ledger_entry_cannot_be_modified():
         with conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT id
-                FROM ledger_entries
-                LIMIT 1
+                SELECT le.id
+                FROM ledger_entries le
+                JOIN transactions t ON t.id = le.transaction_id
+                WHERE t.posted_at IS NOT NULL
+                ORDER BY le.id
+                LIMIT 1;
                 """
             )
             entry = cur.fetchone()
@@ -58,6 +61,35 @@ def test_posted_ledger_entry_cannot_be_modified():
                     """
                     UPDATE ledger_entries
                     SET debit = debit + 1
+                    WHERE id = %s
+                    """,
+                    (entry[0],)
+                )
+
+
+def test_posted_ledger_entry_cannot_be_deleted():
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT le.id
+                FROM ledger_entries le
+                JOIN transactions t ON t.id = le.transaction_id
+                WHERE t.posted_at IS NOT NULL
+                ORDER BY le.id
+                LIMIT 1
+                """
+            )
+            entry = cur.fetchone()
+
+    assert entry is not None
+
+    with pytest.raises(psycopg.errors.RaiseException):
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    DELETE FROM ledger_entries
                     WHERE id = %s
                     """,
                     (entry[0],)

@@ -3,7 +3,7 @@ from threading import Barrier
 
 from ledger_engine.engine import LedgerEngine
 
-def test_reproduce_race_contition():
+def test_concurrent_withdrawals_cannot_overdraw():
 
     bank = LedgerEngine()
     bank.create_account("alice")

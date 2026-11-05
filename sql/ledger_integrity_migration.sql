@@ -77,7 +77,7 @@ DECLARE
     target_transaction_id UUID;
     transaction_posted_at TIMESTAMPTZ;
 BEGIN
-    IF TG_OP = 'UPDATE' THEN 
+    IF TG_OP IN ('UPDATE', 'DELETE') THEN
         target_transaction_id := OLD.transaction_id;
     ELSE
         target_transaction_id := NEW.transaction_id;
