@@ -79,19 +79,32 @@ DECLARE
 BEGIN
     IF TG_OP IN ('UPDATE', 'DELETE') THEN
         target_transaction_id := OLD.transaction_id;
-    ELSE
-        target_transaction_id := NEW.transaction_id;
+
+        SELECT posted_at
+        INTO transaction_posted_at
+        FROM transactions
+        WHERE id = target_transaction_id
+        FOR UPDATE;
+
+        IF transaction_posted_at IS NOT NULL THEN
+            RAISE EXCEPTION
+                'Cannot modify entries of a posted transaction';
+        END IF;
     END IF;
 
-    SELECT posted_at
-    INTO transaction_posted_at
-    FROM transactions
-    WHERE id = target_transaction_id
-    FOR UPDATE;
+    IF TG_OP IN ('INSERT' , 'UPDATE') THEN
+        target_transaction_id := NEW.transaction_id
 
-    IF transaction_posted_at IS NOT NULL THEN
-        RAISE EXCEPTION
-            'Cannot modify entries of a posted transaction';
+        SELECT posted_at
+        INTO transaction_posted_at
+        FROM transactions
+        WHERE id = target_transaction_id
+        FOR UPDATE;
+
+        IF transaction_posted_at IS NOT NULL THEN
+            RAISE EXCEPTION
+                'Cannot modify entries of a posted transaction';
+        END IF;
     END IF;
 
     IF TG_OP = 'DELETE' THEN
